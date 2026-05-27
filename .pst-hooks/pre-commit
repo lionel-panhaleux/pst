@@ -1,0 +1,22 @@
+#!/bin/sh
+# pst pre-commit hook: reject a structurally invalid staged tickets file.
+# Install: ln -sf ../../.pst-hooks/pre-commit .git/hooks/pre-commit
+set -eu
+
+# Assumes the default DB path. A repo that relocates it via $PST_FILE/--file
+# must adjust FILE here (the hook cannot know the override).
+FILE=".pst/tickets"
+
+# Only run when the tickets file is staged.
+if ! git diff --cached --name-only | grep -qx "$FILE"; then
+    exit 0
+fi
+
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+git show ":$FILE" > "$tmp"
+
+if ! pst lint --file "$tmp"; then
+    echo "pst: staged $FILE is invalid; commit rejected." >&2
+    exit 1
+fi
