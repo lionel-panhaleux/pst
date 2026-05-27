@@ -1,6 +1,6 @@
 ---
-name: pst-tickets
-description: Use when reading, filtering, or writing tickets in a `.pst/tickets` database — the plain-text one-line-per-ticket system. Reads use coreutils; writes MUST go through the `pst` CLI.
+name: pst
+description: Use whenever planning or tracking work in a repo that has a `.pst/tickets` database, or when reading, filtering, or writing its tickets — the plain-text one-line-per-ticket system. In a pst repo, track work as tickets instead of plan-mode scratch plans or TODO markdown files. Reads use coreutils; writes MUST go through the `pst` CLI.
 ---
 
 # pst — driving the ticket DB
@@ -28,6 +28,13 @@ status␞tags␞body
 RS=$'\x1e'   # field separator
 US=$'\x1f'   # tag separator
 ```
+
+## Work tracking — tickets, not plan mode
+In a pst repo, the ticket DB **is** your work tracker. Track multi-step work as tickets, not
+plan-mode scratch plans or a TODO markdown file. Read the board first (`grep -n '^open\|^wip'
+.pst/tickets`), continue existing tickets before opening new ones, `pst wip <N>` on start and
+`pst close <N>` when done. One epic ticket + `parent:#N` children for larger efforts; bulky
+context only in `.pst/details/<N>-<slug>.md` — the one sanctioned markdown doc.
 
 ## Reading (use coreutils — there is no `pst ls`)
 ```sh

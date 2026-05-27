@@ -240,3 +240,44 @@ profile. Both are last resorts, not defaults.
 
 **If `show N`/`set N` line-location measures too slow:** add the `.pst/` u64-per-line offset index
 (valid across status edits; patch/rebuild on tags/body edits). Not before.
+
+## Packaging & distribution
+
+**Principle**: pst is **opt-in per repo**. `pst init` is the only thing that activates pst for a
+repo, and it only writes to that repo. There is no global agent state — no global skill copies, no
+global hooks, no `~/.claude` / `~/.codex` / `~/.cursor` writes ever.
+
+- **Binary** — build-from-source (pst is tiny): `cargo install --git …` or `brew install
+  lionel-panhaleux/tap/pst`. The Homebrew formula lives in the sibling tap repo
+  `lionel-panhaleux/homebrew-tap` (`Formula/pst.rb`). No prebuilt binaries, no CI.
+- **Per-repo activation** — `pst init [flags]`. Always scaffolds `.pst/tickets`, `.pst/details/`,
+  `.pst/mandate.md`, `.pst/skill.md`, and installs the git `pre-commit` lint hook. Then writes one
+  tool-native always-on instruction per detected (or `--flag`-forced) agent:
+
+  | Tool | File written | Mechanism |
+  |---|---|---|
+  | Cursor | `.cursor/rules/pst-mandate.mdc` (`alwaysApply: true`) | always-on rule |
+  | Antigravity | `.agents/rules/pst-mandate.md` (`.agent/rules/…` legacy) | always-on rule |
+  | Claude Code | `.claude/settings.json` (JSON-merge) + `.claude/hooks/pst-mandate.sh` | `SessionStart` hook injecting stdout as `additionalContext` |
+  | Codex | `.codex/config.toml` `developer_instructions` block (marker-delimited) | session injection via TOML key |
+  | Copilot | `.github/copilot-instructions.md` (marker-delimited block) | always-on instructions |
+
+  Auto-detection: tool dir/file presence in the repo (`.cursor/`, `.agents/`, `.claude/` or
+  `CLAUDE.md`, `.codex/` or `AGENTS.md`, `.github/`). Explicit flags (`--cursor`, `--antigravity`,
+  `--claude`, `--codex`, `--copilot`, repeatable) force a target and create its dir if absent.
+  Neither detection nor flag → exit 2 with the flag list.
+- **Single source of truth** — the mandate (`pst-mandate.md`) is embedded in the binary via
+  `include_str!` and shipped per-repo as `.pst/mandate.md`. Per-tool rule files duplicate it
+  verbatim (with the appropriate frontmatter / TOML wrapping). Re-runs refresh in place — every
+  block sits between frozen markers (`<!-- pst-mandate:start/end -->` in markdown, `# pst-mandate:start/end`
+  in TOML), and JSON edits in `.claude/settings.json` identify pst-owned entries by command path
+  (`…/pst-mandate.sh`).
+- **Safe `.claude/settings.json` merge** — read → `serde_json` parse → bail on invalid JSON (never
+  overwrite) → mutate only `hooks.SessionStart`, leaving every other key/entry byte-equivalent →
+  `flock` the file for the read-modify-write window. Ownership of entries is by inner command
+  path; `pst init --uninstall` removes only those entries.
+- **`pst init --show`** — prints what pst has installed in the current repo (per-tool file
+  presence + claude settings entry state).
+- **`pst init --uninstall`** — removes every pst-owned file and stripping marker blocks
+  in-place; user data in `.pst/tickets` and `.pst/details/` is preserved. Foreign git hooks and
+  unrelated `.claude/settings.json` entries are left untouched.

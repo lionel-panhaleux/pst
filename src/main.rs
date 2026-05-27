@@ -1,4 +1,5 @@
 mod format;
+mod init;
 mod store;
 
 use std::path::{Path, PathBuf};
@@ -21,6 +22,25 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Scaffold .pst/ here and activate pst for the listed (or auto-detected) agents
+    Init {
+        /// Print what pst has installed in this repo; exit
+        #[arg(long, conflicts_with_all = ["uninstall", "cursor", "antigravity", "claude", "codex", "copilot"])]
+        show: bool,
+        /// Remove pst-owned files (data in .pst/ is preserved); exit
+        #[arg(long, conflicts_with_all = ["show", "cursor", "antigravity", "claude", "codex", "copilot"])]
+        uninstall: bool,
+        #[arg(long)]
+        cursor: bool,
+        #[arg(long)]
+        antigravity: bool,
+        #[arg(long)]
+        claude: bool,
+        #[arg(long)]
+        codex: bool,
+        #[arg(long)]
+        copilot: bool,
+    },
     /// Append a new ticket; prints its number
     Add {
         body: String,
@@ -61,6 +81,18 @@ fn main() -> ExitCode {
 
     let result = match cli.cmd {
         Cmd::Lint => return run_lint(&path),
+        Cmd::Init { show, uninstall, cursor, antigravity, claude, codex, copilot } => {
+            let mut tools = Vec::new();
+            if cursor { tools.push(init::Tool::Cursor); }
+            if antigravity { tools.push(init::Tool::Antigravity); }
+            if claude { tools.push(init::Tool::Claude); }
+            if codex { tools.push(init::Tool::Codex); }
+            if copilot { tools.push(init::Tool::Copilot); }
+            return match init::init(&init::Opts { tools, show, uninstall }) {
+                Ok(code) => code,
+                Err(e) => { eprintln!("pst: {e}"); ExitCode::FAILURE }
+            };
+        }
         Cmd::Add { body, tags, status } => parse_status(&status)
             .and_then(|s| store.add(s, &tags, &body).map_err(|e| e.to_string()))
             .map(|n| println!("{n}")),
