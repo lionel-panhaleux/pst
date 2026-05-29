@@ -210,6 +210,24 @@ This guarantees that every committed version of the file is structurally valid.
   - The `SKILL.md` bash recipes actually work: run each documented `grep`/`sed`/`wc` snippet
     against a sample DB and assert the expected result, so the agent contract can't silently rot.
 
+## Migrating a pre-0.2.0 DB (RS/US → TAB/comma)
+
+pst 0.1.0 used ASCII RS (`0x1E`) as field separator and US (`0x1F`) as tag separator.
+pst ≥ 0.2.0 uses TAB and `,`. The on-disk break is total: a 0.1.0 DB read by 0.2.0
+fails `pst lint` on every line with `FieldCount`.
+
+One-shot conversion (any pst DB anywhere on the machine — `tr` is byte-level and
+won't touch UTF-8 multi-byte content because RS/US never appear inside valid UTF-8
+sequences):
+
+```sh
+tr '\036\037' '\t,' < .pst/tickets > .pst/tickets.new \
+  && mv .pst/tickets.new .pst/tickets \
+  && pst lint
+```
+
+`\036` = octal RS, `\037` = octal US. Run once per pre-0.2.0 DB, then drop this section.
+
 ## Open defaults (locked unless changed)
 
 - Binary name: `pst`
