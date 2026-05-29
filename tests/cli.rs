@@ -26,7 +26,7 @@ fn read(p: &Path) -> Vec<u8> {
 #[test]
 fn lint_pass_and_fail() {
     let db = tmp("lint").join("t");
-    fs::write(&db, b"open  \x1e\x1ehello\n").unwrap();
+    fs::write(&db, b"open  \t\thello\n").unwrap();
     assert!(pst(&db, &["lint"]).status.success());
     fs::write(&db, b"broken\n").unwrap();
     assert!(!pst(&db, &["lint"]).status.success());
@@ -38,22 +38,22 @@ fn add_appends_and_numbers() {
     assert_eq!(String::from_utf8_lossy(&pst(&db, &["add", "first"]).stdout).trim(), "1");
     let out = pst(&db, &["add", "second", "--tag", "bug", "--status", "wip"]);
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "2");
-    assert_eq!(read(&db), b"open  \x1e\x1efirst\nwip   \x1ebug\x1esecond\n");
+    assert_eq!(read(&db), b"open  \t\tfirst\nwip   \tbug\tsecond\n");
 }
 
 #[test]
 fn add_does_not_fuse_onto_unterminated_line() {
     let db = tmp("fuse").join("t");
-    fs::write(&db, b"open  \x1e\x1eone").unwrap(); // no trailing newline
+    fs::write(&db, b"open  \t\tone").unwrap(); // no trailing newline
     assert_eq!(String::from_utf8_lossy(&pst(&db, &["add", "two"]).stdout).trim(), "2");
-    assert_eq!(read(&db), b"open  \x1e\x1eone\nopen  \x1e\x1etwo\n");
+    assert_eq!(read(&db), b"open  \t\tone\nopen  \t\ttwo\n");
     assert!(pst(&db, &["lint"]).status.success());
 }
 
 #[test]
 fn status_edits_are_in_place() {
     let db = tmp("status").join("t");
-    fs::write(&db, b"open  \x1ebug\x1eone\nopen  \x1e\x1etwo\n").unwrap();
+    fs::write(&db, b"open  \tbug\tone\nopen  \t\ttwo\n").unwrap();
     let before = read(&db);
     assert!(pst(&db, &["close", "1"]).status.success());
     let after = read(&db);
@@ -62,34 +62,34 @@ fn status_edits_are_in_place() {
     assert_eq!(&after[..STATUS_WIDTH], b"closed");
     assert!(pst(&db, &["reopen", "1"]).status.success());
     assert!(pst(&db, &["set", "2", "--status", "wip"]).status.success()); // routes to fast path
-    assert_eq!(read(&db), b"open  \x1ebug\x1eone\nwip   \x1e\x1etwo\n");
+    assert_eq!(read(&db), b"open  \tbug\tone\nwip   \t\ttwo\n");
 }
 
 #[test]
 fn set_tags_add_remove_dedup() {
     let db = tmp("tags").join("t");
-    fs::write(&db, b"open  \x1ebug\x1eone\n").unwrap();
+    fs::write(&db, b"open  \tbug\tone\n").unwrap();
     pst(&db, &["set", "1", "--tag", "+login", "--tag", "+bug"]);
-    assert_eq!(read(&db), b"open  \x1ebug\x1flogin\x1eone\n");
+    assert_eq!(read(&db), b"open  \tbug,login\tone\n");
     pst(&db, &["set", "1", "--tag", "-bug"]);
-    assert_eq!(read(&db), b"open  \x1elogin\x1eone\n");
+    assert_eq!(read(&db), b"open  \tlogin\tone\n");
 }
 
 #[test]
 fn set_body_rewrites_only_target_line() {
     let db = tmp("body").join("t");
-    fs::write(&db, b"open  \x1e\x1eone\nopen  \x1e\x1etwo\nopen  \x1e\x1ethree\n").unwrap();
+    fs::write(&db, b"open  \t\tone\nopen  \t\ttwo\nopen  \t\tthree\n").unwrap();
     assert!(pst(&db, &["set", "2", "--body", "TWO"]).status.success());
-    assert_eq!(read(&db), b"open  \x1e\x1eone\nopen  \x1e\x1eTWO\nopen  \x1e\x1ethree\n");
+    assert_eq!(read(&db), b"open  \t\tone\nopen  \t\tTWO\nopen  \t\tthree\n");
 }
 
 #[test]
 fn set_rejects_no_op_and_flag_like_tag() {
     let db = tmp("reject").join("t");
-    fs::write(&db, b"open  \x1e\x1eone\n").unwrap();
+    fs::write(&db, b"open  \t\tone\n").unwrap();
     assert!(!pst(&db, &["set", "1"]).status.success()); // nothing to set
     assert!(!pst(&db, &["set", "1", "--tag", "--status", "closed"]).status.success());
-    assert_eq!(read(&db), b"open  \x1e\x1eone\n"); // unchanged
+    assert_eq!(read(&db), b"open  \t\tone\n"); // unchanged
 }
 
 #[test]
@@ -101,10 +101,20 @@ fn close_rejects_malformed_line() {
 }
 
 #[test]
+fn close_rejects_when_status_separator_is_not_tab() {
+    // A 6-byte line prefix followed by a space (not TAB) must not be pwritten over —
+    // it isn't shaped like a status field.
+    let db = tmp("malformed-sep").join("t");
+    fs::write(&db, b"open   not even close\n").unwrap();
+    assert!(!pst(&db, &["close", "1"]).status.success());
+    assert_eq!(read(&db), b"open   not even close\n");
+}
+
+#[test]
 fn show_with_and_without_detail() {
     let dir = tmp("show");
     let db = dir.join("t");
-    fs::write(&db, b"wip   \x1ebug\x1flogin\x1eFix it parent:#42\nopen  \x1e\x1eplain\n").unwrap();
+    fs::write(&db, b"wip   \tbug,login\tFix it parent:#42\nopen  \t\tplain\n").unwrap();
     fs::create_dir_all(dir.join("details")).unwrap();
     fs::write(dir.join("details/1-fix.md"), b"context\n").unwrap();
 
@@ -354,7 +364,7 @@ fn init_uninstall_removes_only_owned_files() {
     let pre_commit = dir.join(".git/hooks/pre-commit");
     assert!(pre_commit.is_file());
     // Add some user data — must survive uninstall.
-    fs::write(dir.join(".pst/tickets"), b"open  \x1e\x1ekept\n").unwrap();
+    fs::write(dir.join(".pst/tickets"), b"open  \t\tkept\n").unwrap();
 
     assert!(pst_init(&dir, &["--uninstall"]).status.success());
     // Tool-native files we own → gone.
@@ -373,7 +383,7 @@ fn init_uninstall_removes_only_owned_files() {
     assert!(c.contains("# My rules") && c.contains("use 2-space indent."));
     assert!(!c.contains("<!-- pst-mandate:"));
     // User data preserved.
-    assert_eq!(read(&dir.join(".pst/tickets")), b"open  \x1e\x1ekept\n");
+    assert_eq!(read(&dir.join(".pst/tickets")), b"open  \t\tkept\n");
 }
 
 #[test]

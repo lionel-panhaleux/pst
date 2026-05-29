@@ -32,32 +32,41 @@ is a single plain-text file: **one line = one ticket, line number = ticket numbe
 - Each ticket is exactly one `\n`-terminated line. The file always ends with `\n`.
 
 ### Line layout
-Three fields separated by ASCII **RS** (Record Separator, `0x1E`, shown here as `␞`):
+Three TAB-separated fields. The format is plain TSV with one extra rule (fixed-width
+status); coreutils, awk, and LLM tokenizers all handle it natively, with no invisible
+control characters.
 
 ```
-status␞tags␞body\n
+status<TAB>tags<TAB>body\n
 ```
 
 | Field    | Validated | Rules |
 |----------|-----------|-------|
 | `status` | yes       | Strict enum: `open` \| `wip` \| `closed`. Required. **Fixed-width: exactly 6 bytes, right-padded with spaces** (`open··`, `wip···`, `closed`; `·` = space, `0x20`). The fixed width lets a status change be an in-place 6-byte write that shifts no later byte — see *Write discipline*. |
-| `tags`   | yes       | Zero or more bare tokens separated by ASCII **US** (`0x1F`, `␟`). May be empty. |
-| `body`   | yes       | Non-empty UTF-8, **single line**. Long is fine. |
+| `tags`   | yes       | Zero or more bare tokens separated by `,` (comma). May be empty. |
+| `body`   | yes       | Non-empty UTF-8, **single line**. Must not contain TAB. Long is fine. |
 
-Example (`␞` = RS, `␟` = US; `status` shown with its two trailing pad spaces made visible as `··`):
+Example (`→` = TAB; `status` shown with its two trailing pad spaces made visible as `··`):
 
 ```
-open··␞bug␟login␞Reject empty password on the login form; @alice hit a 500 in prod. parent:#42
+open··→bug,login→Reject empty password on the login form; @alice hit a 500 in prod. parent:#42
 ```
 
 ### Hard invariants (enforced by `pst` and by `pst lint`)
-1. Every line contains exactly two RS characters (→ exactly three fields).
-2. RS (`0x1E`) is the field separator and US (`0x1F`) the tag separator — these are structural, never field
-   content. `\n` (`0x0A`) only ever terminates a line.
+1. Every line contains exactly two TAB characters (→ exactly three fields).
+2. TAB (`\t`, `0x09`) is the field separator and `,` the tag separator — neither may
+   appear inside field content. `\n` (`0x0A`) only ever terminates a line.
 3. `status` is exactly 6 bytes whose `trim_end`-of-spaces value is one of `open` / `wip` / `closed`
    (i.e. `open··`, `wip···`, or `closed`). Trailing spaces are pad, never other content.
 4. `body` is non-empty.
 5. The file ends with a trailing `\n`.
+
+> **Why TAB rather than ASCII RS/US (`0x1E`/`0x1F`)?** RS/US are invisible to most
+> renderers and tokenize poorly in LLMs — when an agent reads a raw line, field
+> boundaries vanish. TAB is the canonical column separator in TSV, ubiquitous in
+> training data, visible-as-whitespace, and works natively with `cut -f`, `awk -F'\t'`,
+> and `IFS=$'\t' read`. The cost — banning TAB in body and `,` in tags — is negligible
+> for one-line tickets.
 
 ### Soft body conventions (greppable, NOT enforced)
 The body is free text. These conventions exist purely so agents and `grep` can find things;
@@ -103,11 +112,12 @@ by hand is genuinely unsafe or error-prone. Reading, filtering, counting and sea
 deliberately *not* commands — they are documented bash recipes in `SKILL.md`, e.g.:
 
 ```sh
-sed -n '42p' .pst/tickets            # raw ticket 42
-wc -l .pst/tickets                   # ticket count
-grep -n 'parent:#42' .pst/tickets    # all children of epic 42
-grep -n '^open' .pst/tickets         # all open tickets (status is the line prefix; pad/RS follow)
-grep -n '@alice' .pst/tickets        # everything mentioning alice
+sed -n '42p' .pst/tickets                       # raw ticket 42
+wc -l .pst/tickets                              # ticket count
+grep -n 'parent:#42' .pst/tickets               # all children of epic 42
+grep -n '^open' .pst/tickets                    # all open tickets (status is the line prefix; pad/TAB follow)
+grep -n '@alice' .pst/tickets                   # everything mentioning alice
+awk -F'\t' '$2 ~ /(^|,)login(,|$)/' .pst/tickets  # all tickets tagged 'login'
 ```
 
 ### Core commands (each unsafe to do by hand)
@@ -121,7 +131,7 @@ grep -n '@alice' .pst/tickets        # everything mentioning alice
 | Command | Purpose |
 |---------|---------|
 | `pst close <N>` / `pst reopen <N>` / `pst wip <N>` | Sugar over `set --status` for the most common write (status change). |
-| `pst show <N>` | Read ticket N, decode RS/US to readable separators, and append `.pst/details/<N>-*.md` if it exists — the one read that assembles more than `sed` gives you. (Last-change author/date is a `SKILL.md` git recipe, not built in.) |
+| `pst show <N>` | Read ticket N, format it for humans (status / tags / body on labelled lines), and append `.pst/details/<N>-*.md` if it exists — the one read that assembles more than `sed` gives you. (Last-change author/date is a `SKILL.md` git recipe, not built in.) |
 
 > `ls` is intentionally omitted: it would be `grep` with lipstick. Filtering recipes live in `SKILL.md`.
 >
@@ -133,9 +143,10 @@ grep -n '@alice' .pst/tickets        # everything mentioning alice
 Every mutating command first acquires an advisory lock (`flock`) on the DB file so parallel agents
 cannot corrupt it, then takes one of three write paths:
 
-1. **Status-only `set` (incl. `close`/`reopen`/`wip`)** — locate line N's byte offset and `pwrite`
-   the 6-byte status field in place. The fixed width means no later byte shifts, so `line N =
-   ticket N` and any offset index stay valid. O(1) write regardless of file size.
+1. **Status-only `set` (incl. `close`/`reopen`/`wip`)** — locate line N's byte offset, verify
+   the byte after the 6-byte status field is TAB (refuse otherwise), and `pwrite` the new 6-byte
+   status field in place. The fixed width means no later byte shifts, so `line N = ticket N` and
+   any offset index stay valid. O(1) write regardless of file size.
 2. **`add`** — append the new line with `O_APPEND` + `fsync`. O(1), no full rewrite.
 3. **Any `tags`/`body` edit** — read the file, rebuild only the target line in a buffer, then
    rewrite the DB in place (`seek(0)` → `write_all` → `set_len(new_len)` → `fsync`). O(file size).
@@ -155,7 +166,6 @@ CLI only for writes. `SKILL.md` is therefore a first-class deliverable, not docu
 afterthought — it is the contract that makes raw access safe and effective. It must cover:
 
 - The line format and the three hard invariants, stated tersely.
-- The control-char literals an agent needs in shell: `$'\x1e'` (RS), `$'\x1f'` (US).
 - The canonical read/filter/count recipes (the bash snippets above and a few more).
 - The git-history recipes (reads the agent runs itself, since `pst` never touches git):
   last change → `git blame -L N,N --porcelain -- .pst/tickets` (`author`, `author-time`);
@@ -180,7 +190,7 @@ This guarantees that every committed version of the file is structurally valid.
 
 - **Language:** Rust. Minimal dependencies — `clap` (args), `memchr` (SIMD separator/newline
   scanning). No `serde`, no `tempfile`, no mmap, no locking crate:
-  - **Format handling is raw `&[u8]`**, never decoded to `str` to parse. Split on RS/US with
+  - **Format handling is raw `&[u8]`**, never decoded to `str` to parse. Split on TAB / `,` with
     `memchr`; match the 6-byte status by bytes.
   - **Locking** uses std `File::lock`/`try_lock` (stable since Rust 1.89 — `flock LOCK_EX` on
     Unix), so no external crate.
@@ -230,9 +240,11 @@ Tight rules for when we code this. Follow them; don't re-litigate.
 - ❌ Full-file rewrite for a status-only change — that's the whole point of fixed-width status.
 - ❌ Per-byte loops to find separators — let `memchr`'s SIMD do it (16+ bytes/step).
 
-**Validation shortcut:** the forbidden field bytes (RS `0x1E`, US `0x1F`, GS `0x1D`, `\n`) are all
-single bytes → one `memchr3`/`memchr` pass per field, no decode needed. UTF-8 validity is the only
-thing that needs `from_utf8`.
+**Validation shortcut:** the structural separators (TAB `0x09`, `,` `0x2C`, `\n` `0x0A`) are all
+single bytes → one `memchr`/`memchr2` pass per field, no decode needed. UTF-8 validity is the only
+thing that needs `from_utf8`. Lint of a parsed line is even cheaper: TAB and `\n` cannot appear in
+the body or tags slices by construction (the line was bounded by them), so only the tag-token
+non-emptiness and UTF-8 checks remain.
 
 **If `lint`/scan ever measures too slow** (unlikely <100ms @100MB single-threaded): split the buffer
 at newline boundaries and `rayon`-parallelize; add `simdutf8` only if UTF-8 validation dominates a

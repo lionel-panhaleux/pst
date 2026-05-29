@@ -40,10 +40,10 @@ Auto-detects from existing config dirs/files. Force a target with `--cursor`, `-
 and marker blocks; your `.pst/tickets` data, foreign hooks, and unrelated settings stay put.
 
 ## Line format
-`status␞tags␞body` — fields split by RS (`0x1e`), tags by US (`0x1f`):
+`status<TAB>tags<TAB>body` — plain TSV, with one extra rule (fixed-width status):
 - `status`: 6-byte padded `open  ` | `wip   ` | `closed`
-- `tags`: zero or more US-separated tokens (may be empty)
-- `body`: non-empty single-line UTF-8
+- `tags`: zero or more comma-separated tokens (may be empty)
+- `body`: non-empty single-line UTF-8 (no TAB)
 
 ## Commands
 ```

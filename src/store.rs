@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use memchr::memchr_iter;
 
-use crate::format::{encode_fields, parse_line, Status, NL, RS, STATUS_WIDTH, US};
+use crate::format::{encode_fields, parse_line, Status, COMMA, NL, STATUS_WIDTH, TAB};
 
 const CHUNK: usize = 64 * 1024;
 
@@ -43,13 +43,13 @@ impl Store {
         let mut f = self.open_locked()?;
         let (start, end) = line_span(&mut f, n)?.ok_or_else(|| not_found(n))?;
         // The status field is the 6 bytes at `start`; the next byte must be its
-        // closing RS. Refuse to pwrite into a line not shaped that way.
+        // closing TAB. Refuse to pwrite into a line not shaped that way.
         if end - start < STATUS_WIDTH as u64 + 1 {
             return Err(malformed());
         }
         let mut sep = [0u8];
         f.read_exact_at(&mut sep, start + STATUS_WIDTH as u64)?;
-        if sep[0] != RS {
+        if sep[0] != TAB {
             return Err(malformed());
         }
         f.write_all_at(status.padded(), start)?;
@@ -96,7 +96,7 @@ impl Store {
         let tags: Vec<_> = if cur.tags.is_empty() {
             Vec::new()
         } else {
-            cur.tags.split(|&b| b == US).map(String::from_utf8_lossy).collect()
+            cur.tags.split(|&b| b == COMMA).map(String::from_utf8_lossy).collect()
         };
         let mut out = format!(
             "#{n}  [{}]  {}\n{}\n",
@@ -176,7 +176,7 @@ fn line_span(f: &mut File, n: usize) -> io::Result<Option<(u64, u64)>> {
 /// (into `field` and `ops`) so no tag bytes are copied.
 fn apply_tag_ops<'a>(field: &'a [u8], ops: &'a [TagOp]) -> Vec<&'a [u8]> {
     let mut tags: Vec<&[u8]> =
-        if field.is_empty() { Vec::new() } else { field.split(|&b| b == US).collect() };
+        if field.is_empty() { Vec::new() } else { field.split(|&b| b == COMMA).collect() };
     for op in ops {
         match op {
             TagOp::Add(t) => {
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn line_span_finds_complete_lines_only() {
-        let mut f = File::open(tmp(b"open  \x1e\x1eone\nwip   \x1e\x1etwo\n")).unwrap();
+        let mut f = File::open(tmp(b"open  \t\tone\nwip   \t\ttwo\n")).unwrap();
         assert_eq!(line_span(&mut f, 1).unwrap(), Some((0, 11)));
         f.rewind().unwrap();
         assert_eq!(line_span(&mut f, 2).unwrap(), Some((12, 23)));
@@ -227,6 +227,6 @@ mod tests {
         let ops = [TagOp::Add("login".into()), TagOp::Add("bug".into())];
         assert_eq!(apply_tag_ops(b"bug", &ops), vec![&b"bug"[..], b"login"]);
         let ops = [TagOp::Remove("bug".into())];
-        assert_eq!(apply_tag_ops(b"bug\x1flogin", &ops), vec![&b"login"[..]]);
+        assert_eq!(apply_tag_ops(b"bug,login", &ops), vec![&b"login"[..]]);
     }
 }

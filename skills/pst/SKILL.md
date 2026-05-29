@@ -6,28 +6,23 @@ description: Use whenever planning or tracking work in a repo that has a `.pst/t
 # pst — driving the ticket DB
 
 The DB is one UTF-8 file, `.pst/tickets`, **one line = one ticket, line number = ticket number**.
-Each line has three fields separated by RS (`0x1e`), tags within field 2 separated by US (`0x1f`):
+Each line is plain TSV — three fields separated by TAB (`\t`), tags within field 2 comma-separated:
 
 ```
-status␞tags␞body
+status<TAB>tags<TAB>body
 ```
 
 - `status` — exactly 6 bytes: `open  `, `wip   `, or `closed` (right-padded with spaces).
-- `tags` — zero or more US-separated tokens; may be empty.
-- `body` — non-empty single-line UTF-8.
+- `tags` — zero or more comma-separated bare tokens; may be empty.
+- `body` — non-empty single-line UTF-8, no TAB.
 
 ## Hard invariants (never violate)
-1. Exactly two RS per line (three fields).
-2. RS/US are structural separators, never field content; `\n` only terminates a line.
+1. Exactly two TABs per line (three fields).
+2. TAB is the field separator and `,` the tag separator — neither may appear inside field content.
+   `\n` only terminates a line.
 3. `status` is one of the three 6-byte literals above.
 4. `body` is non-empty.
 5. The file ends with `\n`.
-
-## Shell control-char literals
-```sh
-RS=$'\x1e'   # field separator
-US=$'\x1f'   # tag separator
-```
 
 ## Work tracking — tickets, not plan mode
 In a pst repo, the ticket DB **is** your work tracker. Track multi-step work as tickets, not
@@ -38,13 +33,15 @@ context only in `.pst/details/<N>-<slug>.md` — the one sanctioned markdown doc
 
 ## Reading (use coreutils — there is no `pst ls`)
 ```sh
-sed -n '42p' .pst/tickets          # raw ticket 42
-wc -l < .pst/tickets               # ticket count
-grep -n '^open' .pst/tickets       # open tickets (status is the line prefix)
-grep -n '^wip' .pst/tickets        # work-in-progress
-grep -nc 'parent:#42' .pst/tickets # count children of epic 42
-grep -n '@alice' .pst/tickets      # everything mentioning alice
-pst show 42                        # decoded ticket 42 + its detail file
+sed -n '42p' .pst/tickets                          # raw ticket 42
+wc -l < .pst/tickets                               # ticket count
+grep -n '^open' .pst/tickets                       # open tickets (status is the line prefix)
+grep -n '^wip' .pst/tickets                        # work-in-progress
+grep -nc 'parent:#42' .pst/tickets                 # count children of epic 42
+grep -n '@alice' .pst/tickets                      # everything mentioning alice
+awk -F'\t' '$2 ~ /(^|,)login(,|$)/' .pst/tickets   # all tickets tagged 'login' (exact-tag match)
+awk -F'\t' '{print NR": "$3}' .pst/tickets         # number + body only (drop status/tags)
+pst show 42                                        # formatted ticket 42 + its detail file
 ```
 
 ## Git-history recipes (pst never touches git — you run these)

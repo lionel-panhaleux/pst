@@ -1,10 +1,9 @@
 use std::io;
 
-use memchr::{memchr, memchr3, memchr_iter};
+use memchr::{memchr, memchr2, memchr_iter};
 
-pub const RS: u8 = 0x1E;
-pub const US: u8 = 0x1F;
-const GS: u8 = 0x1D;
+pub const TAB: u8 = b'\t';
+pub const COMMA: u8 = b',';
 pub const NL: u8 = 0x0A;
 pub const STATUS_WIDTH: usize = 6;
 
@@ -51,11 +50,11 @@ pub struct Fields<'a> {
     pub body: &'a [u8],
 }
 
-/// Split a line (no trailing `\n`) into three fields; `None` unless exactly two RS.
+/// Split a line (no trailing `\n`) into three fields; `None` unless exactly two TABs.
 pub fn parse_line(line: &[u8]) -> Option<Fields<'_>> {
-    let a = memchr(RS, line)?;
-    let b = a + 1 + memchr(RS, &line[a + 1..])?;
-    if memchr(RS, &line[b + 1..]).is_some() {
+    let a = memchr(TAB, line)?;
+    let b = a + 1 + memchr(TAB, &line[a + 1..])?;
+    if memchr(TAB, &line[b + 1..]).is_some() {
         return None;
     }
     Some(Fields {
@@ -65,7 +64,7 @@ pub fn parse_line(line: &[u8]) -> Option<Fields<'_>> {
     })
 }
 
-/// Build a line `status␞tags␞body` (no trailing `\n`) into one buffer. Tags are
+/// Build a line `status\ttags\tbody` (no trailing `\n`) into one buffer. Tags are
 /// borrowed, not owned, so nothing is copied until it lands in `out`. UTF-8 is
 /// not checked here — callers pass `&str`-derived bytes and `lint` re-checks.
 pub fn encode_fields(status: Status, tags: &[&[u8]], body: &[u8]) -> io::Result<Vec<u8>> {
@@ -73,23 +72,23 @@ pub fn encode_fields(status: Status, tags: &[&[u8]], body: &[u8]) -> io::Result<
     if body.is_empty() {
         return Err(bad("empty body"));
     }
-    if has_control(body) {
-        return Err(bad("control byte in body"));
+    if memchr2(TAB, NL, body).is_some() {
+        return Err(bad("tab or newline in body"));
     }
-    if tags.iter().any(|t| t.is_empty() || has_control(t)) {
+    if tags.iter().any(|t| t.is_empty() || has_tag_break(t)) {
         return Err(bad("invalid tag"));
     }
     let cap = STATUS_WIDTH + 2 + body.len() + tags.iter().map(|t| t.len() + 1).sum::<usize>();
     let mut out = Vec::with_capacity(cap);
     out.extend_from_slice(status.padded());
-    out.push(RS);
+    out.push(TAB);
     for (i, t) in tags.iter().enumerate() {
         if i > 0 {
-            out.push(US);
+            out.push(COMMA);
         }
         out.extend_from_slice(t);
     }
-    out.push(RS);
+    out.push(TAB);
     out.extend_from_slice(body);
     Ok(out)
 }
@@ -146,9 +145,7 @@ fn validate_line(line: &[u8]) -> Result<(), LineError> {
     if f.body.is_empty() {
         return Err(LineError::EmptyBody);
     }
-    if has_control(f.body) {
-        return Err(LineError::ForbiddenByte);
-    }
+    // Body cannot contain TAB or NL — parse_line already bounded the field by them.
     if std::str::from_utf8(f.body).is_err() {
         return Err(LineError::NotUtf8);
     }
@@ -156,14 +153,13 @@ fn validate_line(line: &[u8]) -> Result<(), LineError> {
 }
 
 fn tags_ok(field: &[u8]) -> bool {
-    field.is_empty()
-        || field
-            .split(|&b| b == US)
-            .all(|t| !t.is_empty() && memchr3(RS, GS, NL, t).is_none())
+    // TAB and NL can't appear here — parse_line already bounded the field by them.
+    // So validity reduces to: no empty token (no leading/trailing/double comma).
+    field.is_empty() || field.split(|&b| b == COMMA).all(|t| !t.is_empty())
 }
 
-fn has_control(b: &[u8]) -> bool {
-    memchr3(RS, US, GS, b).is_some() || memchr(NL, b).is_some()
+fn has_tag_break(t: &[u8]) -> bool {
+    memchr2(TAB, NL, t).is_some() || memchr(COMMA, t).is_some()
 }
 
 #[cfg(test)]
@@ -184,31 +180,33 @@ mod tests {
 
     #[test]
     fn parse_line_fields() {
-        let f = parse_line(b"open  \x1ebug\x1flogin\x1ehello").unwrap();
-        assert_eq!((f.status, f.tags, f.body), (&b"open  "[..], &b"bug\x1flogin"[..], &b"hello"[..]));
-        assert_eq!(parse_line(b"wip   \x1e\x1ex").unwrap().tags, b"");
-        assert!(parse_line(b"open  \x1ebody").is_none());
-        assert!(parse_line(b"a\x1eb\x1ec\x1ed").is_none());
+        let f = parse_line(b"open  \tbug,login\thello").unwrap();
+        assert_eq!((f.status, f.tags, f.body), (&b"open  "[..], &b"bug,login"[..], &b"hello"[..]));
+        assert_eq!(parse_line(b"wip   \t\tx").unwrap().tags, b"");
+        assert!(parse_line(b"open  \tbody").is_none());
+        assert!(parse_line(b"a\tb\tc\td").is_none());
     }
 
     #[test]
     fn encode_roundtrips_and_rejects() {
         let line = encode_fields(Status::Open, &[b"bug", b"login"], b"hi").unwrap();
-        assert_eq!(line, b"open  \x1ebug\x1flogin\x1ehi");
-        assert_eq!(encode_fields(Status::Wip, &[], b"x").unwrap(), b"wip   \x1e\x1ex");
+        assert_eq!(line, b"open  \tbug,login\thi");
+        assert_eq!(encode_fields(Status::Wip, &[], b"x").unwrap(), b"wip   \t\tx");
         assert!(encode_fields(Status::Open, &[], b"").is_err());
         assert!(encode_fields(Status::Open, &[], b"a\nb").is_err());
-        assert!(encode_fields(Status::Open, &[b"a\x1fb"], b"x").is_err());
+        assert!(encode_fields(Status::Open, &[], b"a\tb").is_err()); // tab in body
+        assert!(encode_fields(Status::Open, &[b"a,b"], b"x").is_err()); // comma in tag
+        assert!(encode_fields(Status::Open, &[b"a\tb"], b"x").is_err()); // tab in tag
         assert!(encode_fields(Status::Open, &[b""], b"x").is_err());
     }
 
     #[test]
     fn lint_accepts_and_pinpoints() {
         assert_eq!(lint(b""), vec![]);
-        assert_eq!(lint(b"open  \x1e\x1efirst\nclosed\x1ebug\x1esecond\n"), vec![]);
-        assert_eq!(lint(b"open  \x1e\x1efirst"), vec![LintError::MissingTrailingNewline]);
+        assert_eq!(lint(b"open  \t\tfirst\nclosed\tbug\tsecond\n"), vec![]);
+        assert_eq!(lint(b"open  \t\tfirst"), vec![LintError::MissingTrailingNewline]);
         assert_eq!(
-            lint(b"open  \x1e\x1eok\nbadline\n"),
+            lint(b"open  \t\tok\nbadline\n"),
             vec![LintError::Line { number: 2, error: LineError::FieldCount }]
         );
     }
@@ -216,13 +214,13 @@ mod tests {
     #[test]
     fn validate_rejects_each_shape() {
         let cases: &[(&[u8], LineError)] = &[
-            (b"open  \x1ebody", LineError::FieldCount),
-            (b"openx \x1e\x1ebody", LineError::BadStatus),
-            (b"open\x1e\x1ebody", LineError::BadStatus),
-            (b"open  \x1e\x1e", LineError::EmptyBody),
-            (b"open  \x1e\x1ebo\x1ddy", LineError::ForbiddenByte),
-            (b"open  \x1ea\x1f\x1fb\x1ebody", LineError::ForbiddenByte),
-            (b"open  \x1e\x1e\xff\xfe", LineError::NotUtf8),
+            (b"open  \tbody", LineError::FieldCount),
+            (b"openx \t\tbody", LineError::BadStatus),
+            (b"open\t\tbody", LineError::BadStatus),
+            (b"open  \t\t", LineError::EmptyBody),
+            (b"open  \ta,,b\tbody", LineError::ForbiddenByte), // empty tag token
+            (b"open  \t,bug\tbody", LineError::ForbiddenByte), // leading comma → empty token
+            (b"open  \t\t\xff\xfe", LineError::NotUtf8),
         ];
         for (line, want) in cases {
             assert_eq!(validate_line(line).unwrap_err(), *want, "{line:?}");
