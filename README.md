@@ -76,3 +76,7 @@ Append-only: lines are never deleted or reordered ("delete" = `close`). Locating
 line is currently a newline scan.
 
 See `docs/DESIGN.md` for rationale and `skills/pst/SKILL.md` for the agent contract / shell recipes.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
