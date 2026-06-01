@@ -2,7 +2,7 @@
 
 A lean, git-friendly ticket DB: one UTF-8 text file, **one line = one ticket, line
 number = ticket number**. Reads are plain coreutils; the `pst` CLI exists only for
-*safe, validated writes*. Deps: `clap` + `memchr`, nothing else.
+*safe, validated writes*.
 
 ## Install
 
@@ -13,7 +13,9 @@ Two steps: install the binary once, then activate pst per-repo. No global agent 
 ```
 brew install lionel-panhaleux/tap/pst
 ```
+
 or, with Rust:
+
 ```
 cargo install --git https://github.com/lionel-panhaleux/pst
 ```
@@ -23,6 +25,7 @@ cargo install --git https://github.com/lionel-panhaleux/pst
 ```
 pst init
 ```
+
 Scaffolds `.pst/` (tickets, details, mandate, skill), installs the git pre-commit lint hook,
 and writes one tool-native always-on instruction per detected agent. Supported:
 
@@ -40,12 +43,14 @@ Auto-detects from existing config dirs/files. Force a target with `--cursor`, `-
 and marker blocks; your `.pst/tickets` data, foreign hooks, and unrelated settings stay put.
 
 ## Line format
+
 `status<TAB>tags<TAB>body` — plain TSV, with one extra rule (fixed-width status):
 - `status`: 6-byte padded `open  ` | `wip   ` | `closed`
 - `tags`: zero or more comma-separated tokens (may be empty)
 - `body`: non-empty single-line UTF-8 (no TAB)
 
 ## Commands
+
 ```
 pst add <body> [--tag T]... [--status S]            # append, prints the number
 pst set <N> [--status S] [--tag +T|-T]... [--body TEXT]
@@ -56,8 +61,10 @@ pst lint                                             # validate the whole file
 DB path: `--file` > `$PST_FILE` > `.pst/tickets`.
 
 ## Performance notes
+
 All parsing is byte-level with SIMD `memchr` — bytes are never decoded to `str`.
 Writes hold an advisory `flock` and take the cheapest path:
+
 - **add** appends under `O_APPEND`; the ticket number comes from a streaming
   newline count (no full-file buffer).
 - **status-only edits** (`close`/`reopen`/`wip`, `set --status`) are an O(1)
@@ -66,6 +73,6 @@ Writes hold an advisory `flock` and take the cheapest path:
   prefix is left untouched on disk and never copied.
 
 Append-only: lines are never deleted or reordered ("delete" = `close`). Locating a
-line is currently a newline scan; a `.pst/` offset index would make it O(1) later.
+line is currently a newline scan.
 
 See `docs/DESIGN.md` for rationale and `skills/pst/SKILL.md` for the agent contract / shell recipes.
