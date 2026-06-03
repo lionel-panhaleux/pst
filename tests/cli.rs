@@ -33,6 +33,16 @@ fn lint_pass_and_fail() {
 }
 
 #[test]
+fn version_flag_reports_crate_version() {
+    let out = Command::new(bin()).arg("--version").output().unwrap();
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        concat!("pst ", env!("CARGO_PKG_VERSION"))
+    );
+}
+
+#[test]
 fn add_appends_and_numbers() {
     let db = tmp("add").join("t");
     assert_eq!(String::from_utf8_lossy(&pst(&db, &["add", "first"]).stdout).trim(), "1");

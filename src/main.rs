@@ -11,7 +11,7 @@ use format::{lint, LintError, Status};
 use store::{Store, TagOp};
 
 #[derive(Parser)]
-#[command(name = "pst", about = "plain-simple-tickets")]
+#[command(name = "pst", version, about = "plain-simple-tickets")]
 struct Cli {
     /// DB file path (overrides $PST_FILE; default .pst/tickets)
     #[arg(long, global = true)]
