@@ -78,8 +78,8 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${TAG#v}"
-          gh release download "$TAG" --repo "$REPO" --pattern '*.tar.gz.sha256' --dir sums
-          sha() { cut -d' ' -f1 < "sums/pst-$1.tar.gz.sha256"; }
+          gh release download "$TAG" --repo "$REPO" --pattern '*.sha256' --dir sums
+          sha() { cut -d' ' -f1 < "sums/pst-$1.sha256"; }
           SHA_MACOS_ARM="$(sha aarch64-apple-darwin)"
           SHA_MACOS_INTEL="$(sha x86_64-apple-darwin)"
           SHA_LINUX_ARM="$(sha aarch64-unknown-linux-gnu)"
