@@ -13,8 +13,10 @@ Full design: **`docs/DESIGN.md`** (read it before touching anything).
 - `pst-mandate.md` — the always-on "track work as tickets, not plan-mode/TODO" directive.
   Embedded in the binary; written to `.pst/mandate.md` by `pst init` and replicated into each
   detected agent's native always-on instruction file.
-- Distribution: `cargo install --git` or Homebrew via sibling tap `../homebrew-tap`
-  (`Formula/pst.rb`). No prebuilt binaries, no install script — `pst init` does all per-repo work.
+- Distribution: Homebrew via sibling tap `../homebrew-tap` (`Formula/pst.rb`) installs a prebuilt
+  binary built by `.github/workflows/release.yml` on `v*` tags (template: `.github/homebrew/pst.rb.tmpl`).
+  `cargo install --git` or `brew install --HEAD` build from source. No install script — `pst init`
+  does all per-repo work.
 
 ## Status
 CLI implemented and tested (`cargo test`). Opt-in per-repo packaging across Cursor / Antigravity /

@@ -1,0 +1,126 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build binaries for, e.g. v0.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the GitHub release (idempotent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — reusing it."
+          else
+            gh release create "$TAG" --repo "$REPO" --title "$TAG" \
+              --generate-notes --verify-tag
+          fi
+
+  upload-assets:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Build and upload pst-${{ matrix.target }}.tar.gz
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: pst
+          target: ${{ matrix.target }}
+          checksum: sha256
+          ref: refs/tags/${{ env.TAG }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  bump-formula:
+    needs: upload-assets
+    runs-on: ubuntu-latest
+    env:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Render the Homebrew formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          gh release download "$TAG" --repo "$REPO" --pattern '*.tar.gz.sha256' --dir sums
+          sha() { cut -d' ' -f1 < "sums/pst-$1.tar.gz.sha256"; }
+          SHA_MACOS_ARM="$(sha aarch64-apple-darwin)"
+          SHA_MACOS_INTEL="$(sha x86_64-apple-darwin)"
+          SHA_LINUX_ARM="$(sha aarch64-unknown-linux-gnu)"
+          SHA_LINUX_INTEL="$(sha x86_64-unknown-linux-gnu)"
+          for s in "$SHA_MACOS_ARM" "$SHA_MACOS_INTEL" "$SHA_LINUX_ARM" "$SHA_LINUX_INTEL"; do
+            [ -n "$s" ] || { echo "::error::missing checksum"; exit 1; }
+          done
+          sed \
+            -e "s|@@VERSION@@|${VERSION}|g" \
+            -e "s|@@TAG@@|${TAG}|g" \
+            -e "s|@@SHA_MACOS_ARM@@|${SHA_MACOS_ARM}|g" \
+            -e "s|@@SHA_MACOS_INTEL@@|${SHA_MACOS_INTEL}|g" \
+            -e "s|@@SHA_LINUX_ARM@@|${SHA_LINUX_ARM}|g" \
+            -e "s|@@SHA_LINUX_INTEL@@|${SHA_LINUX_INTEL}|g" \
+            .github/homebrew/pst.rb.tmpl > pst.rb
+          {
+            echo "## Homebrew formula for \`$TAG\`"
+            echo '```ruby'
+            cat pst.rb
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Push the formula to the tap
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          git clone --depth 1 \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/lionel-panhaleux/homebrew-tap.git" tap
+          cp pst.rb tap/Formula/pst.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/pst.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date — nothing to push."
+          else
+            git commit -m "pst $VERSION"
+            git push
+          fi
+      - name: Note when the tap is not wired up
+        if: ${{ env.HOMEBREW_TAP_TOKEN == '' }}
+        run: |
+          echo "::warning::HOMEBREW_TAP_TOKEN secret is not set — the tap was not updated."
+          echo "The rendered formula is in this job's summary; paste it into the tap, or set the secret to automate this."

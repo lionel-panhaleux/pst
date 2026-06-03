@@ -1,0 +1,50 @@
+# GENERATED FILE — do not edit in the tap.
+# Source of truth: .github/homebrew/pst.rb.tmpl in the pst repo, rendered by
+# .github/workflows/release.yml on each tagged release.
+#
+# Installs a prebuilt binary (no Rust/LLVM toolchain). Use `--HEAD` to build from source.
+class Pst < Formula
+  desc "Git-friendly, one-line-per-ticket work tracker for AI agents"
+  homepage "https://github.com/lionel-panhaleux/pst"
+  version "@@VERSION@@"
+  license "MIT"
+
+  head do
+    url "https://github.com/lionel-panhaleux/pst.git", branch: "main"
+    depends_on "rust" => :build
+  end
+
+  on_macos do
+    on_arm do
+      url "https://github.com/lionel-panhaleux/pst/releases/download/@@TAG@@/pst-aarch64-apple-darwin.tar.gz"
+      sha256 "@@SHA_MACOS_ARM@@"
+    end
+    on_intel do
+      url "https://github.com/lionel-panhaleux/pst/releases/download/@@TAG@@/pst-x86_64-apple-darwin.tar.gz"
+      sha256 "@@SHA_MACOS_INTEL@@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/lionel-panhaleux/pst/releases/download/@@TAG@@/pst-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "@@SHA_LINUX_ARM@@"
+    end
+    on_intel do
+      url "https://github.com/lionel-panhaleux/pst/releases/download/@@TAG@@/pst-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "@@SHA_LINUX_INTEL@@"
+    end
+  end
+
+  def install
+    if build.head?
+      system "cargo", "install", *std_cargo_args
+    else
+      bin.install "pst"
+    end
+  end
+
+  test do
+    assert_match "plain-simple-tickets", shell_output("#{bin}/pst --help")
+  end
+end

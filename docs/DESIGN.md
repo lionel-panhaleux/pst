@@ -277,9 +277,14 @@ profile. Both are last resorts, not defaults.
 repo, and it only writes to that repo. There is no global agent state — no global skill copies, no
 global hooks, no `~/.claude` / `~/.codex` / `~/.cursor` writes ever.
 
-- **Binary** — build-from-source (pst is tiny): `cargo install --git …` or `brew install
-  lionel-panhaleux/tap/pst`. The Homebrew formula lives in the sibling tap repo
-  `lionel-panhaleux/homebrew-tap` (`Formula/pst.rb`). No prebuilt binaries, no CI.
+- **Binary** — two paths:
+  - `brew install lionel-panhaleux/tap/pst` installs a **prebuilt binary** (~0.8 MB, no Rust/LLVM
+    toolchain). On a `v*` tag, `.github/workflows/release.yml` cross-builds four targets
+    (macOS arm64/x86_64, Linux arm64/x86_64) via `taiki-e/upload-rust-binary-action`, attaches the
+    `.tar.gz` + `.sha256` assets to the GitHub release, then renders the formula from
+    `.github/homebrew/pst.rb.tmpl` and pushes it to the sibling tap repo
+    `lionel-panhaleux/homebrew-tap` (`Formula/pst.rb`) — requires the `HOMEBREW_TAP_TOKEN` secret.
+  - `cargo install --git …` (or `brew install --HEAD`) still builds from source for the bleeding edge.
 - **Per-repo activation** — `pst init [flags]`. Always scaffolds `.pst/tickets`, `.pst/details/`,
   `.pst/mandate.md`, `.pst/skill.md`, and installs the git `pre-commit` lint hook. Then writes one
   tool-native always-on instruction per detected (or `--flag`-forced) agent:
