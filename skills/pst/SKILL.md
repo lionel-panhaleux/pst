@@ -31,18 +31,23 @@ plan-mode scratch plans or a TODO markdown file. Read the board first (`grep -n 
 `pst close <N>` when done. One epic ticket + `parent:#N` children for larger efforts; bulky
 context only in `.pst/details/<N>-<slug>.md` — the one sanctioned markdown doc.
 
-## Reading (use coreutils — there is no `pst ls`)
+## Reading (`pst show` for a ticket; coreutils for filtering — there is no `pst ls`)
 ```sh
-sed -n '42p' .pst/tickets                          # raw ticket 42
-wc -l < .pst/tickets                               # ticket count
-grep -n '^open' .pst/tickets                       # open tickets (status is the line prefix)
-grep -n '^wip' .pst/tickets                        # work-in-progress
-grep -nc 'parent:#42' .pst/tickets                 # count children of epic 42
-grep -n '@alice' .pst/tickets                      # everything mentioning alice
-awk -F'\t' '$2 ~ /(^|,)login(,|$)/' .pst/tickets   # all tickets tagged 'login' (exact-tag match)
-awk -F'\t' '{print NR": "$3}' .pst/tickets         # number + body only (drop status/tags)
-pst show 42                                        # formatted ticket 42 + its detail file
+pst show 42                                         # read ticket 42: formatted + its detail file
+pst show 42 7 '#13'                                 # several at once; a '#'-prefix is fine
+sed -n '42p' .pst/tickets                           # raw ticket 42 (one line, no detail file)
+wc -l < .pst/tickets                                # ticket count
+grep -n '^open' .pst/tickets                        # open tickets (status is the line prefix)
+grep -n '^wip' .pst/tickets                         # work-in-progress
+grep -nc 'parent:#42' .pst/tickets                  # count children of epic 42
+grep -n '@alice' .pst/tickets                       # everything mentioning alice
+awk -F'\t' '$2 ~ /(^|,)login(,|$)/' .pst/tickets    # all tickets tagged 'login' (exact-tag match)
+awk -F'\t' '{print NR": "$3}' .pst/tickets          # number + body only (drop status/tags)
 ```
+
+A ticket's number is its **line position**, not text stored in the line. To read ticket N use
+`pst show N` (or `sed -n 'Np'`) — `grep '#N'` finds tickets that *reference* N (the `#N` body
+convention below), never ticket N itself.
 
 ## Git-history recipes (pst never touches git — you run these)
 ```sh

@@ -136,6 +136,41 @@ fn show_with_and_without_detail() {
     assert!(s2.contains("plain") && !s2.contains("context"));
 }
 
+#[test]
+fn show_accepts_hash_prefix_and_multiple_ids() {
+    let db = tmp("show-natural").join("t");
+    fs::write(&db, b"open  \t\tone\nwip   \t\ttwo\nclosed\t\tthree\n").unwrap();
+
+    // #-prefix resolves to the same ticket as the bare number.
+    let hashed = pst(&db, &["show", "#2"]);
+    assert!(hashed.status.success());
+    assert!(String::from_utf8(hashed.stdout).unwrap().contains("two"));
+
+    // Several ids at once, including a #-prefixed one, all render.
+    let multi = pst(&db, &["show", "1", "#3"]);
+    assert!(multi.status.success());
+    let s = String::from_utf8(multi.stdout).unwrap();
+    assert!(s.contains("one") && s.contains("three") && !s.contains("two"));
+}
+
+#[test]
+fn show_reports_missing_ids_but_still_prints_the_rest() {
+    let db = tmp("show-missing").join("t");
+    fs::write(&db, b"open  \t\tone\n").unwrap();
+    let out = pst(&db, &["show", "1", "999"]);
+    assert!(!out.status.success()); // a missing id fails the command
+    assert!(String::from_utf8(out.stdout).unwrap().contains("one")); // resolved one still shown
+    assert!(String::from_utf8(out.stderr).unwrap().contains("999"));
+}
+
+#[test]
+fn show_rejects_non_numeric_id() {
+    let db = tmp("show-bad").join("t");
+    fs::write(&db, b"open  \t\tone\n").unwrap();
+    assert!(!pst(&db, &["show", "abc"]).status.success());
+    assert!(!pst(&db, &["show"]).status.success()); // at least one id required
+}
+
 fn pst_init(dir: &Path, args: &[&str]) -> Output {
     Command::new(bin()).arg("init").args(args).current_dir(dir).output().unwrap()
 }

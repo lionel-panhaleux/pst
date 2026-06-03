@@ -55,7 +55,7 @@ and marker blocks; your `.pst/tickets` data, foreign hooks, and unrelated settin
 pst add <body> [--tag T]... [--status S]            # append, prints the number
 pst set <N> [--status S] [--tag +T|-T]... [--body TEXT]
 pst close|reopen|wip <N>                             # status shortcuts
-pst show <N>                                         # decoded ticket + detail file
+pst show <N>...                                      # decoded ticket(s) + detail files (#-prefix ok)
 pst lint                                             # validate the whole file
 ```
 DB path: `--file` > `$PST_FILE` > `.pst/tickets`.

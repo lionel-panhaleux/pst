@@ -67,8 +67,11 @@ enum Cmd {
     Wip { n: usize },
     /// Validate the whole DB file
     Lint,
-    /// Print ticket N plus its detail file if present
-    Show { n: usize },
+    /// Print one or more tickets plus their detail files; ids may be #-prefixed
+    Show {
+        #[arg(required = true, value_name = "N")]
+        ids: Vec<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -100,7 +103,7 @@ fn main() -> ExitCode {
         Cmd::Close { n } => store.set_status(n, Status::Closed).map_err(|e| e.to_string()),
         Cmd::Reopen { n } => store.set_status(n, Status::Open).map_err(|e| e.to_string()),
         Cmd::Wip { n } => store.set_status(n, Status::Wip).map_err(|e| e.to_string()),
-        Cmd::Show { n } => store.show(n).map(|s| print!("{s}")).map_err(|e| e.to_string()),
+        Cmd::Show { ids } => return run_show(&store, &ids),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -119,6 +122,40 @@ fn set(store: &Store, n: usize, status: Option<String>, tags: &[String], body: O
         (Some(s), true, true) => store.set_status(n, s).map_err(|e| e.to_string()), // O(1) fast path
         _ => store.rewrite_line(n, status, &ops, body).map_err(|e| e.to_string()),
     }
+}
+
+/// Render each requested ticket, separated by a blank line. Tolerant of natural
+/// input: ids may be `#`-prefixed and several may be passed at once. Missing or
+/// malformed tickets report to stderr without suppressing the ones that resolve.
+fn run_show(store: &Store, ids: &[String]) -> ExitCode {
+    let mut ok = true;
+    let mut first = true;
+    for id in ids {
+        match parse_id(id).and_then(|n| store.show(n).map_err(|e| e.to_string())) {
+            Ok(s) => {
+                if !first {
+                    println!();
+                }
+                print!("{s}");
+                first = false;
+            }
+            Err(e) => {
+                eprintln!("pst: {e}");
+                ok = false;
+            }
+        }
+    }
+    if ok { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// Parse a ticket id, tolerating a leading `#` and surrounding whitespace so
+/// `pst show '#25'` works as naturally as `pst show 25`.
+fn parse_id(raw: &str) -> Result<usize, String> {
+    let t = raw.trim();
+    let digits = t.strip_prefix('#').map_or(t, str::trim_start);
+    digits
+        .parse::<usize>()
+        .map_err(|_| format!("invalid ticket id '{raw}'; expected a number like 25 or #25"))
 }
 
 fn parse_status(word: &str) -> Result<Status, String> {

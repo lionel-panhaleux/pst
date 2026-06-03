@@ -131,7 +131,7 @@ awk -F'\t' '$2 ~ /(^|,)login(,|$)/' .pst/tickets  # all tickets tagged 'login'
 | Command | Purpose |
 |---------|---------|
 | `pst close <N>` / `pst reopen <N>` / `pst wip <N>` | Sugar over `set --status` for the most common write (status change). |
-| `pst show <N>` | Read ticket N, format it for humans (status / tags / body on labelled lines), and append `.pst/details/<N>-*.md` if it exists — the one read that assembles more than `sed` gives you. (Last-change author/date is a `SKILL.md` git recipe, not built in.) |
+| `pst show <N>...` | Read ticket N, format it for humans (status / tags / body on labelled lines), and append `.pst/details/<N>-*.md` if it exists — the one read that assembles more than `sed` gives you. Tolerant of natural input: accepts several ids at once and a `#`-prefix (`pst show 7 '#13'`), reporting any missing/malformed id to stderr while still printing the rest. (Last-change author/date is a `SKILL.md` git recipe, not built in.) |
 
 > `ls` is intentionally omitted: it would be `grep` with lipstick. Filtering recipes live in `SKILL.md`.
 >
