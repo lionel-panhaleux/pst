@@ -77,6 +77,32 @@ line is currently a newline scan.
 
 See `docs/DESIGN.md` for rationale and `skills/pst/SKILL.md` for the agent contract / shell recipes.
 
+## Releasing
+
+Releases are tag-driven and fully automated by `.github/workflows/release.yml`. To cut `vX.Y.Z`:
+
+```
+# 1. bump the version, refresh the lockfile
+sed -i '' 's/^version = .*/version = "X.Y.Z"/' Cargo.toml && cargo build
+git commit -am "Release X.Y.Z"
+
+# 2. tag and push — this triggers the release
+git tag -a vX.Y.Z -m "pst X.Y.Z" && git push origin main vX.Y.Z
+```
+
+On the tag, CI cross-builds four targets (macOS arm64/x86_64, Linux arm64/x86_64), attaches
+`pst-<target>.tar.gz` + `.sha256` to the GitHub release, then renders
+`.github/homebrew/pst.rb.tmpl` and pushes the updated `Formula/pst.rb` to the
+[tap](https://github.com/lionel-panhaleux/homebrew-tap). No SHA bumping by hand; `brew install`
+serves the prebuilt binary (`brew install --HEAD` still builds from source).
+
+- The formula version is scanned from the release URL, so the template carries no `version` stanza.
+- To rebuild an existing tag, run the **release** workflow manually (Actions → Run workflow → enter
+  the tag).
+- Automation needs the `HOMEBREW_TAP_TOKEN` repo secret: a fine-grained PAT with **Contents: write**
+  on the tap repo. Without it, CI still publishes binaries and prints the rendered formula in the
+  job summary for manual paste.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

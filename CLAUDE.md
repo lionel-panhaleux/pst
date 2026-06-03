@@ -17,6 +17,9 @@ Full design: **`docs/DESIGN.md`** (read it before touching anything).
   binary built by `.github/workflows/release.yml` on `v*` tags (template: `.github/homebrew/pst.rb.tmpl`).
   `cargo install --git` or `brew install --HEAD` build from source. No install script — `pst init`
   does all per-repo work.
+- Releasing: bump `version` in `Cargo.toml`, commit, then `git tag -a vX.Y.Z -m "pst X.Y.Z" &&
+  git push origin main vX.Y.Z`. The tag triggers CI to build binaries and auto-update the tap formula
+  (needs the `HOMEBREW_TAP_TOKEN` secret). Full steps in README "Releasing".
 
 ## Status
 CLI implemented and tested (`cargo test`). Opt-in per-repo packaging across Cursor / Antigravity /
