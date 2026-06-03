@@ -79,15 +79,29 @@ pub fn init(opts: &Opts) -> io::Result<ExitCode> {
 
 fn scaffold() -> io::Result<()> {
     fs::create_dir_all(".pst/details")?;
-    write_if_missing(".pst/tickets", "")?;
-    write_if_missing(".pst/mandate.md", MANDATE)?;
-    write_if_missing(".pst/skill.md", SKILL)
+    write_if_missing(".pst/tickets", "")?; // never clobber the user's ticket DB
+    // mandate/skill are verbatim copies of the embedded docs — refresh them on
+    // re-run so `brew upgrade` + re-`init` propagates new guidance to old repos.
+    write_synced(".pst/mandate.md", MANDATE)?;
+    write_synced(".pst/skill.md", SKILL)
 }
 
 fn write_if_missing(path: &str, content: &str) -> io::Result<()> {
     let p = Path::new(path);
     if p.exists() { println!("ok      {path} (exists)"); }
     else { fs::write(p, content)?; println!("created {path}"); }
+    Ok(())
+}
+
+/// Write a pst-owned data file, refreshing it in place when the embedded content
+/// has changed (so upgrades reach existing repos) and no-op'ing when it already
+/// matches. Unlike `write_if_missing`, an existing file is overwritten.
+fn write_synced(path: &str, content: &str) -> io::Result<()> {
+    match fs::read_to_string(path) {
+        Ok(c) if c == content => println!("ok      {path} (current)"),
+        Ok(_) => { fs::write(path, content)?; println!("updated {path}"); }
+        Err(_) => { fs::write(path, content)?; println!("created {path}"); }
+    }
     Ok(())
 }
 
@@ -258,12 +272,9 @@ fn upsert_marked(path: &str, ms: &str, me: &str, body: &str) -> io::Result<&'sta
 
 fn show() -> ExitCode {
     let mut any = false;
-    let mut tick = |present: bool, path: &str, label: &str| {
-        if present { println!("ok      {path:40} ({label})"); any = true; }
-    };
-    tick(is_file(".pst/tickets"), ".pst/tickets", "ticket DB");
-    tick(is_file(".pst/mandate.md"), ".pst/mandate.md", "mandate");
-    tick(is_file(".pst/skill.md"), ".pst/skill.md", "skill");
+    any |= present(".pst/tickets", "ticket DB");
+    any |= synced(".pst/mandate.md", MANDATE, "mandate");
+    any |= synced(".pst/skill.md", SKILL, "skill");
     if let Some(d) = git_hooks_dir() {
         let f = d.join("pre-commit");
         match fs::read_to_string(&f) {
@@ -278,7 +289,7 @@ fn show() -> ExitCode {
         (".agents/rules/pst-mandate.md", "Antigravity rule"),
         (".agent/rules/pst-mandate.md", "Antigravity rule (legacy)"),
         (CLAUDE_HOOK_PATH, "Claude hook script"),
-    ] { tick(is_file(path), path, label); }
+    ] { any |= present(path, label); }
     if is_file(CLAUDE_SETTINGS) {
         match claude_settings_state() {
             Some(true) => { println!("ok      {CLAUDE_SETTINGS:40} (pst SessionStart entry present)"); any = true; }
@@ -291,15 +302,33 @@ fn show() -> ExitCode {
         (".github/copilot-instructions.md", MD_S, "Copilot instructions"),
     ] {
         if let Ok(s) = fs::read_to_string(path) {
-            let present = s.contains(mark);
+            let has_block = s.contains(mark);
             println!("{:7} {path:40} ({label}, {})",
-                if present { "ok" } else { "missing" },
-                if present { "pst block present" } else { "no pst block" });
-            any |= present;
+                if has_block { "ok" } else { "missing" },
+                if has_block { "pst block present" } else { "no pst block" });
+            any |= has_block;
         }
     }
     if !any { println!("(no pst state in this directory)"); }
     ExitCode::SUCCESS
+}
+
+/// Report a present-or-absent pst file; returns whether it exists.
+fn present(path: &str, label: &str) -> bool {
+    let ok = is_file(path);
+    if ok { println!("ok      {path:40} ({label})"); }
+    ok
+}
+
+/// Report a managed doc, flagging content drift from the embedded copy so a
+/// stale `.pst/mandate.md`/`.pst/skill.md` is visible. Returns whether present.
+fn synced(path: &str, embedded: &str, label: &str) -> bool {
+    match fs::read_to_string(path) {
+        Ok(c) if c == embedded => println!("ok      {path:40} ({label})"),
+        Ok(_) => println!("stale   {path:40} ({label}, content drift — re-run pst init)"),
+        Err(_) => return false,
+    }
+    true
 }
 
 fn claude_settings_state() -> Option<bool> {

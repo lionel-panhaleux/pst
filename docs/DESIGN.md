@@ -286,8 +286,13 @@ global hooks, no `~/.claude` / `~/.codex` / `~/.cursor` writes ever.
     `lionel-panhaleux/homebrew-tap` (`Formula/pst.rb`) — requires the `HOMEBREW_TAP_TOKEN` secret.
   - `cargo install --git …` (or `brew install --HEAD`) still builds from source for the bleeding edge.
 - **Per-repo activation** — `pst init [flags]`. Always scaffolds `.pst/tickets`, `.pst/details/`,
-  `.pst/mandate.md`, `.pst/skill.md`, and installs the git `pre-commit` lint hook. Then writes one
-  tool-native always-on instruction per detected (or `--flag`-forced) agent:
+  `.pst/mandate.md`, `.pst/skill.md`, and installs the git `pre-commit` lint hook. `.pst/mandate.md`
+  and `.pst/skill.md` are verbatim copies of the embedded docs and are **refreshed in place** on
+  every re-run (so `brew upgrade pst` + re-`init` propagates new guidance to existing repos —
+  crucially for Claude Code, whose `SessionStart` hook just `cat`s `.pst/mandate.md`); only
+  `.pst/tickets` is write-once and never clobbered. `pst init --show` flags either doc as `stale`
+  when its content drifts from the embedded copy. Then writes one tool-native always-on instruction
+  per detected (or `--flag`-forced) agent:
 
   | Tool | File written | Mechanism |
   |---|---|---|

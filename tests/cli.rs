@@ -193,6 +193,39 @@ fn init_scaffolds_and_installs_git_hook() {
 }
 
 #[test]
+fn init_refreshes_managed_docs_but_preserves_tickets() {
+    let dir = tmp("refresh");
+    assert!(pst_init(&dir, &["--cursor"]).status.success());
+    // Simulate an old install upgraded to a new binary: stale managed docs,
+    // plus real user ticket data that must survive.
+    fs::write(dir.join(".pst/mandate.md"), b"OLD MANDATE\n").unwrap();
+    fs::write(dir.join(".pst/skill.md"), b"OLD SKILL\n").unwrap();
+    fs::write(dir.join(".pst/tickets"), b"open  \t\tkept\n").unwrap();
+
+    assert!(pst_init(&dir, &["--cursor"]).status.success());
+    // Managed docs refreshed from the embedded copy.
+    let mandate = String::from_utf8(read(&dir.join(".pst/mandate.md"))).unwrap();
+    assert!(mandate.contains("Track all multi-step work as pst tickets"));
+    assert!(!mandate.contains("OLD MANDATE"));
+    let skill = String::from_utf8(read(&dir.join(".pst/skill.md"))).unwrap();
+    assert!(skill.contains("pst show") && !skill.contains("OLD SKILL"));
+    // User ticket data untouched.
+    assert_eq!(read(&dir.join(".pst/tickets")), b"open  \t\tkept\n");
+}
+
+#[test]
+fn init_show_flags_stale_managed_docs() {
+    let dir = tmp("show-stale");
+    assert!(pst_init(&dir, &["--cursor"]).status.success());
+    fs::write(dir.join(".pst/mandate.md"), b"drifted\n").unwrap();
+    let out = pst_init(&dir, &["--show"]);
+    assert!(out.status.success());
+    let s = String::from_utf8(out.stdout).unwrap();
+    assert!(s.contains("stale") && s.contains(".pst/mandate.md"));
+    assert!(s.contains(".pst/skill.md")); // unchanged one still reported
+}
+
+#[test]
 fn init_no_target_exits_2_and_does_not_clobber() {
     let dir = tmp("no-target");
     let out = pst_init(&dir, &[]);

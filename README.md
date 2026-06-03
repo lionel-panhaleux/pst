@@ -39,8 +39,13 @@ and writes one tool-native always-on instruction per detected agent. Supported:
 
 Auto-detects from existing config dirs/files. Force a target with `--cursor`, `--antigravity`,
 `--claude`, `--codex`, `--copilot` (repeatable) — that also creates the tool's dir if absent.
-`pst init --show` prints what's installed. `pst init --uninstall` removes only pst-owned files
-and marker blocks; your `.pst/tickets` data, foreign hooks, and unrelated settings stay put.
+`pst init --show` prints what's installed (flagging any drifted doc as `stale`). `pst init
+--uninstall` removes only pst-owned files and marker blocks; your `.pst/tickets` data, foreign
+hooks, and unrelated settings stay put.
+
+**After upgrading pst**, re-run `pst init` in each repo: it refreshes the managed docs
+(`.pst/mandate.md`, `.pst/skill.md`) and every tool-native rule file in place from the new
+binary, while leaving your `.pst/tickets` untouched.
 
 ## Line format
 
