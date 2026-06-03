@@ -77,7 +77,6 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          VERSION="${TAG#v}"
           gh release download "$TAG" --repo "$REPO" --pattern '*.sha256' --dir sums
           sha() { cut -d' ' -f1 < "sums/pst-$1.sha256"; }
           SHA_MACOS_ARM="$(sha aarch64-apple-darwin)"
@@ -88,7 +87,6 @@ jobs:
             [ -n "$s" ] || { echo "::error::missing checksum"; exit 1; }
           done
           sed \
-            -e "s|@@VERSION@@|${VERSION}|g" \
             -e "s|@@TAG@@|${TAG}|g" \
             -e "s|@@SHA_MACOS_ARM@@|${SHA_MACOS_ARM}|g" \
             -e "s|@@SHA_MACOS_INTEL@@|${SHA_MACOS_INTEL}|g" \
